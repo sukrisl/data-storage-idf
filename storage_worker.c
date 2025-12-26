@@ -77,6 +77,18 @@ static esp_err_t mkdir_recursive(const char* full) {
     return ESP_OK;
 }
 
+static esp_err_t write_all(int fd, const uint8_t* data, size_t len, size_t* out_written) {
+    size_t total = 0;
+    while (total < len) {
+        ssize_t w = write(fd, data + total, len - total);
+        if (w < 0) return ESP_FAIL;
+        if (w == 0) return ESP_FAIL;  // should not happen
+        total += (size_t)w;
+    }
+    if (out_written) *out_written = total;
+    return ESP_OK;
+}
+
 static esp_err_t atomic_write_file(const char* full, const uint8_t* data, size_t len, size_t* written) {
     char tmp[STORAGE_MAX_PATH + 8];
     int n = snprintf(tmp, sizeof(tmp), "%s.tmp", full);
@@ -88,12 +100,12 @@ static esp_err_t atomic_write_file(const char* full, const uint8_t* data, size_t
         return ESP_FAIL;
     }
 
-    ssize_t w = write(fd, data, len);
-    if (w < 0) {
+    esp_err_t err = write_all(fd, data, len, written);
+    if (err != ESP_OK) {
         ESP_LOGE(TAG, "write '%s' failed errno=%d", tmp, errno);
         close(fd);
         unlink(tmp);
-        return ESP_FAIL;
+        return err;
     }
 
     fsync(fd);
@@ -105,7 +117,6 @@ static esp_err_t atomic_write_file(const char* full, const uint8_t* data, size_t
         return ESP_FAIL;
     }
 
-    if (written) *written = (size_t)w;
     return ESP_OK;
 }
 
@@ -116,17 +127,16 @@ static esp_err_t append_file(const char* full, const uint8_t* data, size_t len, 
         return ESP_FAIL;
     }
 
-    ssize_t w = write(fd, data, len);
-    if (w < 0) {
+    esp_err_t err = write_all(fd, data, len, written);
+    if (err != ESP_OK) {
         ESP_LOGE(TAG, "write '%s' failed errno=%d", full, errno);
         close(fd);
-        return ESP_FAIL;
+        return err;
     }
 
     fsync(fd);
     close(fd);
 
-    if (written) *written = (size_t)w;
     return ESP_OK;
 }
 
