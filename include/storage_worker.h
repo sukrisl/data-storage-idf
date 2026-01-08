@@ -20,6 +20,7 @@ typedef enum {
     STORAGE_OP_WRITE = 0,
     STORAGE_OP_APPEND,
     STORAGE_OP_READ,
+    STORAGE_OP_READ_AT,
     STORAGE_OP_DELETE,
     STORAGE_OP_MKDIR,
     STORAGE_OP_RENAME,
@@ -56,6 +57,8 @@ esp_err_t storage_deinit(storage_worker_t* worker);
 esp_err_t storage_write(storage_worker_t* worker, const char* path, const void* data, size_t len, void* user_ctx);
 esp_err_t storage_append(storage_worker_t* worker, const char* path, const void* data, size_t len, void* user_ctx);
 esp_err_t storage_read(storage_worker_t* worker, const char* path, void* buf, size_t buf_size, void* user_ctx);
+esp_err_t storage_read_at(storage_worker_t* worker, const char* path, uint32_t offset, void* buf, size_t buf_size,
+                          void* user_ctx);
 esp_err_t storage_delete(storage_worker_t* worker, const char* path, void* user_ctx);
 esp_err_t storage_mkdir(storage_worker_t* worker, const char* path, bool recursive, void* user_ctx);
 esp_err_t storage_rename(storage_worker_t* worker, const char* from, const char* to, void* user_ctx);

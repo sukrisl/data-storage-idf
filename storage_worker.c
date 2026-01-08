@@ -27,6 +27,7 @@ typedef struct {
     // For read
     void* read_buf;
     size_t read_buf_size;
+    uint32_t read_offset;
 
     // For mkdir
     bool recursive;
@@ -147,15 +148,50 @@ static esp_err_t read_file(const char* full, void* buf, size_t buf_sz, size_t* o
         return ESP_FAIL;
     }
 
-    ssize_t r = read(fd, buf, buf_sz);
-    if (r < 0) {
-        ESP_LOGE(TAG, "read '%s' failed errno=%d", full, errno);
+    size_t total = 0;
+    while (total < buf_sz) {
+        ssize_t r = read(fd, (uint8_t*)buf + total, buf_sz - total);
+        if (r < 0) {
+            ESP_LOGE(TAG, "read '%s' failed errno=%d", full, errno);
+            close(fd);
+            return ESP_FAIL;
+        }
+        if (r == 0) break;  // EOF
+        total += (size_t)r;
+    }
+
+    close(fd);
+    if (out_len) *out_len = total;
+    return ESP_OK;
+}
+
+static esp_err_t read_file_at(const char* full, uint32_t offset, void* buf, size_t buf_sz, size_t* out_len) {
+    int fd = open(full, O_RDONLY);
+    if (fd < 0) {
+        ESP_LOGE(TAG, "open '%s' failed errno=%d", full, errno);
+        return ESP_FAIL;
+    }
+
+    if (lseek(fd, (off_t)offset, SEEK_SET) < 0) {
+        ESP_LOGE(TAG, "lseek '%s' offset=%u failed errno=%d", full, (unsigned)offset, errno);
         close(fd);
         return ESP_FAIL;
     }
 
+    size_t total = 0;
+    while (total < buf_sz) {
+        ssize_t r = read(fd, (uint8_t*)buf + total, buf_sz - total);
+        if (r < 0) {
+            ESP_LOGE(TAG, "read '%s' failed errno=%d", full, errno);
+            close(fd);
+            return ESP_FAIL;
+        }
+        if (r == 0) break;  // EOF
+        total += (size_t)r;
+    }
+
     close(fd);
-    if (out_len) *out_len = (size_t)r;
+    if (out_len) *out_len = total;
     return ESP_OK;
 }
 
@@ -233,6 +269,11 @@ static void storage_task(void* arg) {
 
             case STORAGE_OP_READ:
                 res.status = read_file(full, cmd.read_buf, cmd.read_buf_size, &res.read_len);
+                res.bytes_processed = res.read_len;
+                break;
+
+            case STORAGE_OP_READ_AT:
+                res.status = read_file_at(full, cmd.read_offset, cmd.read_buf, cmd.read_buf_size, &res.read_len);
                 res.bytes_processed = res.read_len;
                 break;
 
@@ -426,6 +467,29 @@ esp_err_t storage_read(storage_worker_t* worker, const char* path, void* buf, si
         .pool_index = -1,
         .read_buf = buf,
         .read_buf_size = buf_size,
+        .read_offset = 0,
+        .recursive = false,
+        .user_ctx = ctx,
+    };
+
+    strncpy(cmd.path, path, sizeof(cmd.path));
+    cmd.path[sizeof(cmd.path) - 1] = '\0';
+
+    return enqueue_cmd(worker, &cmd);
+}
+
+esp_err_t storage_read_at(storage_worker_t* worker, const char* path, uint32_t offset, void* buf, size_t buf_size,
+                          void* ctx) {
+    if (!worker || !path || !buf || buf_size == 0) return ESP_ERR_INVALID_ARG;
+
+    storage_cmd_t cmd = {
+        .op = STORAGE_OP_READ_AT,
+        .data = NULL,
+        .data_len = 0,
+        .pool_index = -1,
+        .read_buf = buf,
+        .read_buf_size = buf_size,
+        .read_offset = offset,
         .recursive = false,
         .user_ctx = ctx,
     };
